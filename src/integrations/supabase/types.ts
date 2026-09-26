@@ -14,7 +14,214 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      equity_snapshots: {
+        Row: {
+          created_at: string
+          device_id: string
+          id: string
+          value_eur: number
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          id?: string
+          value_eur: number
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          id?: string
+          value_eur?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "equity_snapshots_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "portfolios"
+            referencedColumns: ["device_id"]
+          },
+        ]
+      }
+      portfolios: {
+        Row: {
+          cash_eur: number
+          created_at: string
+          device_id: string
+          finnhub_key: string | null
+        }
+        Insert: {
+          cash_eur?: number
+          created_at?: string
+          device_id: string
+          finnhub_key?: string | null
+        }
+        Update: {
+          cash_eur?: number
+          created_at?: string
+          device_id?: string
+          finnhub_key?: string | null
+        }
+        Relationships: []
+      }
+      positions: {
+        Row: {
+          avg_price: number
+          cost_eur: number
+          currency: string
+          device_id: string
+          id: string
+          last_price: number | null
+          last_price_at: string | null
+          name: string
+          quantity: number
+          symbol: string
+          type: string
+        }
+        Insert: {
+          avg_price: number
+          cost_eur: number
+          currency?: string
+          device_id: string
+          id?: string
+          last_price?: number | null
+          last_price_at?: string | null
+          name: string
+          quantity: number
+          symbol: string
+          type?: string
+        }
+        Update: {
+          avg_price?: number
+          cost_eur?: number
+          currency?: string
+          device_id?: string
+          id?: string
+          last_price?: number | null
+          last_price_at?: string | null
+          name?: string
+          quantity?: number
+          symbol?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "positions_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "portfolios"
+            referencedColumns: ["device_id"]
+          },
+        ]
+      }
+      trades: {
+        Row: {
+          created_at: string
+          currency: string
+          device_id: string
+          id: string
+          name: string
+          price: number
+          quantity: number
+          side: string
+          symbol: string
+          total_eur: number
+        }
+        Insert: {
+          created_at?: string
+          currency: string
+          device_id: string
+          id?: string
+          name: string
+          price: number
+          quantity: number
+          side: string
+          symbol: string
+          total_eur: number
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          device_id?: string
+          id?: string
+          name?: string
+          price?: number
+          quantity?: number
+          side?: string
+          symbol?: string
+          total_eur?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trades_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "portfolios"
+            referencedColumns: ["device_id"]
+          },
+        ]
+      }
+      watchlist_items: {
+        Row: {
+          id: string
+          name: string
+          symbol: string
+          type: string
+          watchlist_id: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          symbol: string
+          type?: string
+          watchlist_id: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          symbol?: string
+          type?: string
+          watchlist_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "watchlist_items_watchlist_id_fkey"
+            columns: ["watchlist_id"]
+            isOneToOne: false
+            referencedRelation: "watchlists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      watchlists: {
+        Row: {
+          created_at: string
+          device_id: string
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "watchlists_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "portfolios"
+            referencedColumns: ["device_id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
