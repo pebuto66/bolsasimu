@@ -23,7 +23,7 @@ import { fmtMoney, fmtNum, fmtPct, signClass } from "./format";
 
 type Q = { symbol: string; price: number | null; changePct: number | null; currency: string; ok: boolean; error?: string };
 type AssetLite = { symbol: string; name: string; type: string };
-type PriceInfo = { price: number | null; changePct: number | null; currency: string; stale: boolean; error?: string };
+type PriceInfo = { price: number | null; changePct: number | null; currency: string; stale: boolean; error?: string | undefined };
 
 const DEVICE_KEY = "bolsasim-device-id";
 const LAST_KEY = "bolsasim-last-quotes";
@@ -145,7 +145,7 @@ function Main({ deviceId, setDeviceId }: { deviceId: string; setDeviceId: (id: s
       const q = quotes.data.quotes[p.symbol];
       if (q?.ok && q.price) prices[p.symbol] = q.price;
     });
-    snapFn({ data: { deviceId, prices } }).then((r) => r.recorded && qc.invalidateQueries({ queryKey: ["state", deviceId] })).catch(() => {});
+    snapFn({ data: { deviceId, prices } }).then((r) => { if (r.recorded) void qc.invalidateQueries({ queryKey: ["state", deviceId] }); }).catch(() => {});
   }, [quotes.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [target, setTarget] = useState<TradeTarget | null>(null);
@@ -317,7 +317,7 @@ function useAddToList(deviceId: string) {
 }
 
 function Market({ info, onBuy, favSet, favoritesId, deviceId }: {
-  info: (s: string) => PriceInfo; onBuy: (a: AssetLite) => void; favSet: Set<string>; favoritesId?: string; deviceId: string;
+  info: (s: string) => PriceInfo; onBuy: (a: AssetLite) => void; favSet: Set<string>; favoritesId?: string | undefined; deviceId: string;
 }) {
   const [tab, setTab] = useState(CATEGORIES[0]!.id);
   const { add, remove } = useAddToList(deviceId);
@@ -422,7 +422,7 @@ function Watchlists({ deviceId, lists, info, onBuy }: {
   const [editName, setEditName] = useState("");
   const inval = () => qc.invalidateQueries({ queryKey: ["state", deviceId] });
   const onErr = (e: Error) => toast.error(e.message);
-  const create = useMutation({ mutationFn: useServerFn(createWatchlist), onSuccess: (l) => { setNewName(""); setActive(l.id); inval(); }, onError: onErr });
+  const create = useMutation({ mutationFn: useServerFn(createWatchlist), onSuccess: (l: { id: string }) => { setNewName(""); setActive(l.id); inval(); }, onError: onErr });
   const rename = useMutation({ mutationFn: useServerFn(renameWatchlist), onSuccess: () => { setEditing(null); inval(); }, onError: onErr });
   const del = useMutation({ mutationFn: useServerFn(deleteWatchlist), onSuccess: () => { setActive(null); inval(); }, onError: onErr });
   const { remove } = useAddToList(deviceId);
@@ -558,7 +558,7 @@ function SettingsPanel({ deviceId, hasKey, setDeviceId }: { deviceId: string; ha
             <Input placeholder="Pegar código" value={code} onChange={(e) => setCode(e.target.value)} className="font-mono text-xs" />
             <Button variant="secondary" onClick={() => {
               const c = code.trim();
-              if (!/^[0-9a-f-]{36}$/i.test(c)) return toast.error("Código no válido");
+              if (!/^[0-9a-f-]{36}$/i.test(c)) { toast.error("Código no válido"); return; }
               setDeviceId(c); setCode(""); toast.success("Cartera cargada");
             }}>Cargar</Button>
           </div>
