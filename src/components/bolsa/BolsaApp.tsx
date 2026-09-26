@@ -538,7 +538,7 @@ function SettingsPanel({ deviceId, hasKey, setDeviceId }: { deviceId: string; ha
           <h3 className="text-sm font-medium">Clave de API de mercado (opcional)</h3>
           <p className="text-xs text-muted-foreground">
             Los precios se obtienen de fuentes públicas sin clave. Si quieres una fuente de respaldo para acciones de EE. UU., añade tu clave gratuita de{" "}
-            <a className="text-primary hover:underline" href="https://finnhub.io/register" target="_blank" rel="noreferrer">Finnhub</a>. Se guarda cifrada en el servidor y nunca se muestra.
+            <a className="text-primary hover:underline" href="https://finnhub.io/register" target="_blank" rel="noreferrer">Finnhub</a>. Se guarda de forma privada en el servidor y nunca se vuelve a mostrar.
           </p>
           <p className="text-xs">Estado: {hasKey ? <span className="text-gain">clave configurada</span> : <span className="text-muted-foreground">sin clave</span>}</p>
           <div className="flex gap-2">
