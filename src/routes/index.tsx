@@ -1,24 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { BolsaApp } from "@/components/bolsa/BolsaApp";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
-  component: Index,
+  head: () => ({
+    meta: [
+      { title: "BolsaSim — Simulador de bolsa educativo" },
+      { name: "description", content: "Practica inversión con 100.000 € virtuales: acciones, ETFs, índices, cripto y materias primas a precios reales." },
+      { property: "og:title", content: "BolsaSim — Simulador de bolsa educativo" },
+      { property: "og:description", content: "Practica inversión con 100.000 € virtuales a precios reales de mercado, sin riesgo." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: BolsaApp,
 });
-
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
-}
