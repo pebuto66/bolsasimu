@@ -1,5 +1,5 @@
 export const fmtMoney = (v: number, cur = "EUR", digits?: number) => {
-  const d = digits ?? (Math.abs(v) < 1 ? 4 : 2);
+  const d = digits ?? (v !== 0 && Math.abs(v) < 1 ? 4 : 2);
   try {
     return new Intl.NumberFormat("es-ES", { style: "currency", currency: cur, minimumFractionDigits: d, maximumFractionDigits: d }).format(v);
   } catch {
