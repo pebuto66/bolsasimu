@@ -22,6 +22,8 @@ import {
   removeFromWatchlist, renameWatchlist, resetSimulation, saveApiKey, searchAssets,
 } from "@/lib/bolsa.functions";
 import { fetchHistory } from "@/lib/history.functions";
+import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable";
 import { ALL_ASSETS, CATEGORIES, START_CASH, TICKER_SYMBOLS, TYPE_LABEL } from "@/lib/assets";
 import { TradeDialog, type TradeTarget } from "./TradeDialog";
 import { fmtMoney, fmtNum, fmtPct, signClass } from "./format";
@@ -97,20 +99,67 @@ function useTheme() {
 }
 
 export function BolsaApp() {
-  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null | undefined>(undefined);
+  const qc = useQueryClient();
   useEffect(() => {
-    let id = localStorage.getItem(DEVICE_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(DEVICE_KEY, id);
-    }
-    setDeviceId(id);
-  }, []);
+    void DEVICE_KEY;
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      setUserId(session?.user.id ?? null);
+      if (event === "SIGNED_OUT") qc.clear();
+    });
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    return () => sub.subscription.unsubscribe();
+  }, [qc]);
 
-  if (!deviceId) {
+  if (userId === undefined) {
     return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Cargando BolsaSim…</div>;
   }
-  return <Main deviceId={deviceId} setDeviceId={(id) => { localStorage.setItem(DEVICE_KEY, id); setDeviceId(id); }} />;
+  if (!userId) return <AuthScreen />;
+  return <Main deviceId={userId} setDeviceId={() => { void supabase.auth.signOut(); }} />;
+}
+
+function AuthScreen() {
+  const [mode, setMode] = useState<"in" | "up">("in");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const google = async () => {
+    const r = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
+    if (r.error) toast.error("No se pudo iniciar sesión con Google");
+  };
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    if (mode === "in") {
+      const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
+      if (error) toast.error("Correo o contraseña incorrectos");
+    } else {
+      const { data, error } = await supabase.auth.signUp({ email, password: pw, options: { emailRedirectTo: window.location.origin } });
+      if (error) toast.error(error.message);
+      else if (!data.session) toast.success("Revisa tu correo para confirmar la cuenta");
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-sm space-y-5 rounded-2xl border border-border bg-card p-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">📈 BolsaSim</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Simulador educativo con 100.000 € virtuales. Inicia sesión para guardar tu cartera.</p>
+        </div>
+        <Button variant="secondary" className="w-full" onClick={google}>Continuar con Google</Button>
+        <div className="text-center text-xs text-muted-foreground">o con tu correo</div>
+        <form className="space-y-3" onSubmit={submit}>
+          <Input type="email" required placeholder="tu@correo.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input type="password" required minLength={6} placeholder="Contraseña" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <Button type="submit" className="w-full" disabled={busy}>{mode === "in" ? "Iniciar sesión" : "Crear cuenta"}</Button>
+        </form>
+        <button className="w-full text-center text-sm text-primary" onClick={() => setMode(mode === "in" ? "up" : "in")}>
+          {mode === "in" ? "¿No tienes cuenta? Regístrate" : "¿Ya tienes cuenta? Inicia sesión"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function Main({ deviceId, setDeviceId }: { deviceId: string; setDeviceId: (id: string) => void }) {
@@ -730,20 +779,9 @@ function SettingsPanel({ deviceId, hasKey, setDeviceId }: { deviceId: string; ha
           {hasKey && <Button variant="ghost" size="sm" onClick={() => save.mutate({ data: { deviceId, key: null } })}>Eliminar clave</Button>}
         </div>
         <div className="space-y-2">
-          <h3 className="text-sm font-medium">Usar en otro navegador</h3>
-          <p className="text-xs text-muted-foreground">Copia este código y pégalo en otro navegador o dispositivo para continuar con la misma cartera.</p>
-          <div className="flex gap-2">
-            <Input readOnly value={deviceId} className="text-xs" />
-            <Button variant="secondary" onClick={() => { navigator.clipboard.writeText(deviceId); toast.success("Código copiado"); }}>Copiar</Button>
-          </div>
-          <div className="flex gap-2">
-            <Input placeholder="Pegar código" value={code} onChange={(e) => setCode(e.target.value)} className="text-xs" />
-            <Button variant="secondary" onClick={() => {
-              const c = code.trim();
-              if (!/^[0-9a-f-]{36}$/i.test(c)) { toast.error("Código no válido"); return; }
-              setDeviceId(c); setCode(""); toast.success("Cartera cargada");
-            }}>Cargar</Button>
-          </div>
+          <h3 className="text-sm font-medium">Tu cuenta</h3>
+          <p className="text-xs text-muted-foreground">Tu cartera se guarda en tu cuenta y la verás en cualquier dispositivo al iniciar sesión.</p>
+          <Button variant="secondary" onClick={() => { void code; setDeviceId(""); }}>Cerrar sesión</Button>
         </div>
         <div className="space-y-2">
           <h3 className="text-sm font-medium">Reiniciar simulación</h3>
