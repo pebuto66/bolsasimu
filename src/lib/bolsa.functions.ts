@@ -4,7 +4,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getFx, getQuote, getQuotes, searchYahoo } from "./market.server";
 
 const START = 100000;
-const dev = z.string().uuid();
 const assetSchema = { symbol: z.string().min(1).max(30), name: z.string().min(1).max(200), type: z.string().max(20) };
 
 async function db() {
