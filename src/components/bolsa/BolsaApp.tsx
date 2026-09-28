@@ -133,10 +133,16 @@ function AuthScreen() {
     if (mode === "in") {
       const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
       if (error) toast.error("Correo o contraseña incorrectos");
-    } else {
+    } else if (mode === "up") {
       const { data, error } = await supabase.auth.signUp({ email, password: pw, options: { emailRedirectTo: window.location.origin } });
       if (error) toast.error(error.message);
       else if (!data.session) toast.success("Revisa tu correo para confirmar la cuenta");
+    } else {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) toast.error(error.message);
+      else toast.success("Te hemos enviado un correo con el enlace para restablecer la contraseña");
     }
     setBusy(false);
   };
@@ -145,15 +151,32 @@ function AuthScreen() {
       <div className="w-full max-w-sm space-y-5 rounded-2xl border border-border bg-card p-6">
         <div className="text-center">
           <h1 className="text-2xl font-bold">📈 BolsaSim</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Simulador educativo con 100.000 € virtuales. Inicia sesión para guardar tu cartera.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {mode === "reset"
+              ? "Te enviaremos un correo con un enlace para crear una nueva contraseña."
+              : "Simulador educativo con 100.000 € virtuales. Inicia sesión para guardar tu cartera."}
+          </p>
         </div>
-        <Button variant="secondary" className="w-full" onClick={google}>Continuar con Google</Button>
-        <div className="text-center text-xs text-muted-foreground">o con tu correo</div>
+        {mode !== "reset" && (
+          <>
+            <Button variant="secondary" className="w-full" onClick={google}>Continuar con Google</Button>
+            <div className="text-center text-xs text-muted-foreground">o con tu correo</div>
+          </>
+        )}
         <form className="space-y-3" onSubmit={submit}>
           <Input type="email" required placeholder="tu@correo.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Input type="password" required minLength={6} placeholder="Contraseña" value={pw} onChange={(e) => setPw(e.target.value)} />
-          <Button type="submit" className="w-full" disabled={busy}>{mode === "in" ? "Iniciar sesión" : "Crear cuenta"}</Button>
+          {mode !== "reset" && (
+            <Input type="password" required minLength={6} placeholder="Contraseña" value={pw} onChange={(e) => setPw(e.target.value)} />
+          )}
+          <Button type="submit" className="w-full" disabled={busy}>
+            {mode === "in" ? "Iniciar sesión" : mode === "up" ? "Crear cuenta" : "Enviar enlace de recuperación"}
+          </Button>
         </form>
+        {mode === "in" && (
+          <button className="w-full text-center text-sm text-primary" onClick={() => setMode("reset")}>
+            ¿Olvidaste tu contraseña?
+          </button>
+        )}
         <button className="w-full text-center text-sm text-primary" onClick={() => setMode(mode === "in" ? "up" : "in")}>
           {mode === "in" ? "¿No tienes cuenta? Regístrate" : "¿Ya tienes cuenta? Inicia sesión"}
         </button>
