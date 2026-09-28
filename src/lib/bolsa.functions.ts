@@ -1,9 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getFx, getQuote, getQuotes, searchYahoo } from "./market.server";
 
 const START = 100000;
-const dev = z.string().uuid();
 const assetSchema = { symbol: z.string().min(1).max(30), name: z.string().min(1).max(200), type: z.string().max(20) };
 
 async function db() {
@@ -42,15 +42,16 @@ async function snapshot(deviceId: string) {
 }
 
 export const getState = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ deviceId: dev }).parse(d))
-  .handler(async ({ data }) => {
-    const p = await ensure(data.deviceId);
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ deviceId: z.string().optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const p = await ensure(context.userId);
     const s = await db();
     const [pos, trades, snaps, lists] = await Promise.all([
-      s.from("positions").select("*").eq("device_id", data.deviceId).order("symbol"),
-      s.from("trades").select("*").eq("device_id", data.deviceId).order("created_at", { ascending: false }).limit(50),
-      s.from("equity_snapshots").select("value_eur, created_at").eq("device_id", data.deviceId).order("created_at").limit(1000),
-      s.from("watchlists").select("id, name, created_at, watchlist_items(id, symbol, name, type)").eq("device_id", data.deviceId).order("created_at"),
+      s.from("positions").select("*").eq("device_id", context.userId).order("symbol"),
+      s.from("trades").select("*").eq("device_id", context.userId).order("created_at", { ascending: false }).limit(50),
+      s.from("equity_snapshots").select("value_eur, created_at").eq("device_id", context.userId).order("created_at").limit(1000),
+      s.from("watchlists").select("id, name, created_at, watchlist_items(id, symbol, name, type)").eq("device_id", context.userId).order("created_at"),
     ]);
     return {
       cash: Number(p.cash_eur),
@@ -72,12 +73,13 @@ export const getState = createServerFn({ method: "POST" })
   });
 
 export const fetchQuotes = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ deviceId: dev.optional(), symbols: z.array(z.string().max(30)).max(150) }).parse(d))
-  .handler(async ({ data }) => {
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ deviceId: z.string().optional(), symbols: z.array(z.string().max(30)).max(150) }).parse(d))
+  .handler(async ({ data, context }) => {
     let key: string | null = null;
-    if (data.deviceId) {
+    {
       const s = await db();
-      const { data: p } = await s.from("portfolios").select("finnhub_key").eq("device_id", data.deviceId).maybeSingle();
+      const { data: p } = await s.from("portfolios").select("finnhub_key").eq("device_id", context.userId).maybeSingle();
       key = p?.finnhub_key ?? null;
     }
     try {
@@ -90,8 +92,9 @@ export const fetchQuotes = createServerFn({ method: "POST" })
   });
 
 export const searchAssets = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ q: z.string().min(1).max(60) }).parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     try {
       const results = await searchYahoo(data.q);
       const quotes = await getQuotes(results.map((r) => r.symbol));
@@ -102,10 +105,11 @@ export const searchAssets = createServerFn({ method: "POST" })
   });
 
 export const trade = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
     z
       .object({
-        deviceId: dev,
+        deviceId: z.string().optional(),
         ...assetSchema,
         side: z.enum(["buy", "sell"]),
         quantity: z.number().positive().optional(),
@@ -113,8 +117,8 @@ export const trade = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data }) => {
-    const p = await ensure(data.deviceId);
+  .handler(async ({ data, context }) => {
+    const p = await ensure(context.userId);
     const s = await db();
     const q = await getQuote(data.symbol, p.finnhub_key);
     if (!q.ok || !q.price) throw new Error(`No hay cotización actual para ${data.symbol} (${q.error ?? "sin datos"}). Inténtalo más tarde.`);
@@ -126,7 +130,7 @@ export const trade = createServerFn({ method: "POST" })
     if (!qty || qty <= 0) throw new Error("Cantidad no válida");
     const total = qty * priceEur;
     const cash = Number(p.cash_eur);
-    const { data: pos } = await s.from("positions").select("*").eq("device_id", data.deviceId).eq("symbol", data.symbol).maybeSingle();
+    const { data: pos } = await s.from("positions").select("*").eq("device_id", context.userId).eq("symbol", data.symbol).maybeSingle();
 
     if (data.side === "buy") {
       if (total > cash + 0.005) throw new Error(`Saldo insuficiente: necesitas ${total.toFixed(2)} € y tienes ${cash.toFixed(2)} €.`);
@@ -141,12 +145,12 @@ export const trade = createServerFn({ method: "POST" })
         }).eq("id", pos.id);
       } else {
         await s.from("positions").insert({
-          device_id: data.deviceId, symbol: data.symbol, name: data.name, type: data.type,
+          device_id: context.userId, symbol: data.symbol, name: data.name, type: data.type,
           currency: q.currency, quantity: qty, avg_price: q.price, cost_eur: total,
           last_price: q.price, last_price_at: new Date().toISOString(),
         });
       }
-      await s.from("portfolios").update({ cash_eur: cash - total }).eq("device_id", data.deviceId);
+      await s.from("portfolios").update({ cash_eur: cash - total }).eq("device_id", context.userId);
     } else {
       if (!pos) throw new Error("No tienes posición en este activo.");
       const pq = Number(pos.quantity);
@@ -161,28 +165,29 @@ export const trade = createServerFn({ method: "POST" })
           last_price: q.price,
           last_price_at: new Date().toISOString(),
         }).eq("id", pos.id);
-      await s.from("portfolios").update({ cash_eur: cash + proceeds }).eq("device_id", data.deviceId);
+      await s.from("portfolios").update({ cash_eur: cash + proceeds }).eq("device_id", context.userId);
     }
     await s.from("trades").insert({
-      device_id: data.deviceId, symbol: data.symbol, name: data.name, side: data.side,
+      device_id: context.userId, symbol: data.symbol, name: data.name, side: data.side,
       quantity: qty, price: q.price, currency: q.currency, total_eur: total,
     });
-    await snapshot(data.deviceId);
+    await snapshot(context.userId);
     return { ok: true, quantity: qty, price: q.price, currency: q.currency, totalEur: total };
   });
 
 export const recordSnapshot = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
-    z.object({ deviceId: dev, prices: z.record(z.string(), z.number().positive()) }).parse(d),
+    z.object({ deviceId: z.string().optional(), prices: z.record(z.string(), z.number().positive()) }).parse(d),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const s = await db();
-    const { data: last } = await s.from("equity_snapshots").select("created_at").eq("device_id", data.deviceId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: last } = await s.from("equity_snapshots").select("created_at").eq("device_id", context.userId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     for (const [symbol, price] of Object.entries(data.prices)) {
-      await s.from("positions").update({ last_price: price, last_price_at: new Date().toISOString() }).eq("device_id", data.deviceId).eq("symbol", symbol);
+      await s.from("positions").update({ last_price: price, last_price_at: new Date().toISOString() }).eq("device_id", context.userId).eq("symbol", symbol);
     }
     if (last && Date.now() - new Date(last.created_at).getTime() < 5 * 60_000) return { recorded: false };
-    await snapshot(data.deviceId);
+    await snapshot(context.userId);
     return { recorded: true };
   });
 
@@ -193,35 +198,39 @@ async function ownsList(deviceId: string, id: string) {
 }
 
 export const createWatchlist = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ deviceId: dev, name: z.string().trim().min(1).max(60) }).parse(d))
-  .handler(async ({ data }) => {
-    await ensure(data.deviceId);
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ deviceId: z.string().optional(), name: z.string().trim().min(1).max(60) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ensure(context.userId);
     const s = await db();
-    const { data: l, error } = await s.from("watchlists").insert({ device_id: data.deviceId, name: data.name }).select("id").single();
+    const { data: l, error } = await s.from("watchlists").insert({ device_id: context.userId, name: data.name }).select("id").single();
     if (error) throw new Error("No se pudo crear la lista");
     return l;
   });
 
 export const renameWatchlist = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ deviceId: dev, id: z.string().uuid(), name: z.string().trim().min(1).max(60) }).parse(d))
-  .handler(async ({ data }) => {
-    await ownsList(data.deviceId, data.id);
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ deviceId: z.string().optional(), id: z.string().uuid(), name: z.string().trim().min(1).max(60) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ownsList(context.userId, data.id);
     await (await db()).from("watchlists").update({ name: data.name }).eq("id", data.id);
     return { ok: true };
   });
 
 export const deleteWatchlist = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ deviceId: dev, id: z.string().uuid() }).parse(d))
-  .handler(async ({ data }) => {
-    await ownsList(data.deviceId, data.id);
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ deviceId: z.string().optional(), id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ownsList(context.userId, data.id);
     await (await db()).from("watchlists").delete().eq("id", data.id);
     return { ok: true };
   });
 
 export const addToWatchlist = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ deviceId: dev, id: z.string().uuid(), ...assetSchema }).parse(d))
-  .handler(async ({ data }) => {
-    await ownsList(data.deviceId, data.id);
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ deviceId: z.string().optional(), id: z.string().uuid(), ...assetSchema }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ownsList(context.userId, data.id);
     await (await db()).from("watchlist_items").upsert(
       { watchlist_id: data.id, symbol: data.symbol, name: data.name, type: data.type },
       { onConflict: "watchlist_id,symbol" },
@@ -230,32 +239,35 @@ export const addToWatchlist = createServerFn({ method: "POST" })
   });
 
 export const removeFromWatchlist = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ deviceId: dev, id: z.string().uuid(), symbol: z.string().max(30) }).parse(d))
-  .handler(async ({ data }) => {
-    await ownsList(data.deviceId, data.id);
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ deviceId: z.string().optional(), id: z.string().uuid(), symbol: z.string().max(30) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ownsList(context.userId, data.id);
     await (await db()).from("watchlist_items").delete().eq("watchlist_id", data.id).eq("symbol", data.symbol);
     return { ok: true };
   });
 
 export const saveApiKey = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ deviceId: dev, key: z.string().trim().max(200).nullable() }).parse(d))
-  .handler(async ({ data }) => {
-    await ensure(data.deviceId);
-    await (await db()).from("portfolios").update({ finnhub_key: data.key || null }).eq("device_id", data.deviceId);
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ deviceId: z.string().optional(), key: z.string().trim().max(200).nullable() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ensure(context.userId);
+    await (await db()).from("portfolios").update({ finnhub_key: data.key || null }).eq("device_id", context.userId);
     return { ok: true };
   });
 
 export const resetSimulation = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ deviceId: dev }).parse(d))
-  .handler(async ({ data }) => {
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ deviceId: z.string().optional() }).parse(d))
+  .handler(async ({ data, context }) => {
     const s = await db();
-    await ensure(data.deviceId);
+    await ensure(context.userId);
     await Promise.all([
-      s.from("positions").delete().eq("device_id", data.deviceId),
-      s.from("trades").delete().eq("device_id", data.deviceId),
-      s.from("equity_snapshots").delete().eq("device_id", data.deviceId),
+      s.from("positions").delete().eq("device_id", context.userId),
+      s.from("trades").delete().eq("device_id", context.userId),
+      s.from("equity_snapshots").delete().eq("device_id", context.userId),
     ]);
-    await s.from("portfolios").update({ cash_eur: START }).eq("device_id", data.deviceId);
-    await s.from("equity_snapshots").insert({ device_id: data.deviceId, value_eur: START });
+    await s.from("portfolios").update({ cash_eur: START }).eq("device_id", context.userId);
+    await s.from("equity_snapshots").insert({ device_id: context.userId, value_eur: START });
     return { ok: true };
   });
